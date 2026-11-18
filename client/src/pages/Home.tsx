@@ -70,6 +70,8 @@ export default function Home() {
   const [filters, setFilters] = useState({ vehicleId: "", maintenanceTypeId: "", vehicleSystemId: "", from: "", to: "" });
 
   const utils = trpc.useUtils();
+  const me = trpc.auth.me.useQuery();
+  const logout = trpc.auth.logout.useMutation({ onSuccess: () => utils.invalidate() });
   const bootstrap = trpc.fleet.bootstrap.useMutation();
   const references = trpc.fleet.references.useQuery();
   const dashboard = trpc.fleet.dashboard.useQuery();
@@ -237,7 +239,7 @@ export default function Home() {
   </>;
 
   return <div className="app-shell">
-    <aside className={`sidebar ${menuOpen ? "open" : ""}`}><div className="brand"><span className="brand-mark"><Truck size={21}/></span><div><b>Frota</b><small>MANUTENÇÃO</small></div><button className="mobile-close" onClick={() => setMenuOpen(false)}><X size={20}/></button></div><nav>{navigation.map(item => { const Icon = item.icon; return <button className={view === item.id ? "active" : ""} onClick={() => selectView(item.id)} key={item.id}><Icon size={19}/><span>{item.label}</span></button>; })}</nav><div className="sidebar-footer"><span className="online-dot"/> Banco de dados ativo</div></aside>
+    <aside className={`sidebar ${menuOpen ? "open" : ""}`}><div className="brand"><span className="brand-mark"><Truck size={21}/></span><div><b>Frota</b><small>MANUTENÇÃO</small></div><button className="mobile-close" onClick={() => setMenuOpen(false)}><X size={20}/></button></div><nav>{navigation.map(item => { const Icon = item.icon; return <button className={view === item.id ? "active" : ""} onClick={() => selectView(item.id)} key={item.id}><Icon size={19}/><span>{item.label}</span></button>; })}</nav><div className="sidebar-footer"><span className="online-dot"/> {me.data?.user?.name ?? "Equipe"}{me.data?.authEnabled && <button className="logout-button" onClick={() => logout.mutate()}>Sair</button>}</div></aside>
     {menuOpen && <button className="backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)} />}
     <main className="main"><header className="topbar"><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu size={22}/></button><div><span className="top-date">CONTROLE DE MANUTENÇÃO</span><strong>Olá! Vamos cuidar da frota.</strong></div><button className="header-action" onClick={() => selectView("lancar")}><Plus size={18}/><span>Novo</span></button></header><div className="content">{isLoading && view === "painel" ? <div className="loading-screen">Preparando seu painel...</div> : view === "painel" ? renderDashboard() : view === "lancar" ? renderLaunch() : view === "historico" ? renderHistory() : renderCadastros()}</div></main>
     <nav className="mobile-nav">{navigation.map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => selectView(item.id)}><Icon size={20}/><span>{item.label}</span></button>; })}</nav>

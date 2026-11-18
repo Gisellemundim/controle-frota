@@ -1,17 +1,28 @@
-import { and, asc, count, desc, eq, gte, lte } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { and, asc, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
+import { createClient } from "@libsql/client";
+import fs from "node:fs";
+import path from "node:path";
 import {
-  InsertUser,
   maintenanceRecords,
   maintenanceTypes,
   suppliers,
-  users,
   vehicles,
   vehicleSystems,
 } from "../drizzle/schema";
-import { ENV } from "./_core/env";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+type Db = ReturnType<typeof drizzle>;
+let _db: Promise<Db> | null = null;
+
+async function openDb(): Promise<Db> {
+  const url = process.env.DATABASE_URL || "file:./dados/frota.db";
+  if (url.startsWith("file:")) fs.mkdirSync(path.dirname(url.slice(5)), { recursive: true });
+  const client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
+  const db = drizzle(client);
+  await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "drizzle/migrations") });
+  return db;
+}
 
 const initialPlates = [
   "RFN7E65", "QWU0330", "RFL3C44", "QWU3D27", "RFK3I76", "RUQ2C83",
@@ -24,48 +35,12 @@ const initialSystems = [
   "Transmissão", "Arrefecimento", "Carroceria", "Lubrificação", "Outro",
 ];
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
+export function getDb() {
+  if (!_db) _db = openDb().catch(error => { _db = null; throw error; });
   return _db;
 }
 
-async function requireDb() {
-  const db = await getDb();
-  if (!db) throw new Error("O banco de dados não está disponível.");
-  return db;
-}
-
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) throw new Error("User openId is required for upsert");
-  const db = await requireDb();
-  const values: InsertUser = { openId: user.openId };
-  const updateSet: Record<string, unknown> = {};
-  for (const field of ["name", "email", "loginMethod"] as const) {
-    if (user[field] !== undefined) {
-      values[field] = user[field] ?? null;
-      updateSet[field] = user[field] ?? null;
-    }
-  }
-  values.lastSignedIn = user.lastSignedIn ?? new Date();
-  updateSet.lastSignedIn = values.lastSignedIn;
-  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
-  updateSet.role = values.role;
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
-}
-
-export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result[0];
-}
+const requireDb = getDb;
 
 export async function seedFleetDefaults() {
   const db = await requireDb();
@@ -134,11 +109,11 @@ function databaseValues(input: MaintenanceInput) {
     vehicleSystemId: input.vehicleSystemId,
     serviceDescription: input.serviceDescription.trim(),
     material: input.material?.trim() || null,
-    partQuantity: input.partQuantity.toFixed(2),
-    partUnitValue: input.partUnitValue.toFixed(2),
-    partsTotal: partsTotal.toFixed(2),
-    laborValue: input.laborValue.toFixed(2),
-    totalValue: totalValue.toFixed(2),
+    partQuantity: input.partQuantity,
+    partUnitValue: input.partUnitValue,
+    partsTotal,
+    laborValue: input.laborValue,
+    totalValue,
     supplierId: input.supplierId ?? null,
     nextMaintenance: input.nextMaintenance || null,
     notes: input.notes?.trim() || null,
@@ -147,13 +122,13 @@ function databaseValues(input: MaintenanceInput) {
 
 export async function createMaintenance(input: MaintenanceInput) {
   const db = await requireDb();
-  const result = await db.insert(maintenanceRecords).values(databaseValues(input));
-  return { id: Number(result[0].insertId) };
+  const [row] = await db.insert(maintenanceRecords).values(databaseValues(input)).returning({ id: maintenanceRecords.id });
+  return { id: row.id };
 }
 
 export async function updateMaintenance(id: number, input: MaintenanceInput) {
   const db = await requireDb();
-  await db.update(maintenanceRecords).set(databaseValues(input)).where(eq(maintenanceRecords.id, id));
+  await db.update(maintenanceRecords).set({ ...databaseValues(input), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(maintenanceRecords.id, id));
 }
 
 export async function deleteMaintenance(id: number) {

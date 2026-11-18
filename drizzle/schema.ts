@@ -1,72 +1,52 @@
-import {
-  date,
-  decimal,
-  int,
-  mysqlEnum,
-  mysqlTable,
-  text,
-  timestamp,
-  varchar,
-} from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+const createdAt = () => text("createdAt").notNull().default(sql`(CURRENT_TIMESTAMP)`);
+
+export const vehicles = sqliteTable("vehicles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  plate: text("plate").notNull().unique(),
+  createdAt: createdAt(),
 });
 
-export const vehicles = mysqlTable("vehicles", {
-  id: int("id").autoincrement().primaryKey(),
-  plate: varchar("plate", { length: 16 }).notNull().unique(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+export const maintenanceTypes = sqliteTable("maintenance_types", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  createdAt: createdAt(),
 });
 
-export const maintenanceTypes = mysqlTable("maintenance_types", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 80 }).notNull().unique(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+export const vehicleSystems = sqliteTable("vehicle_systems", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  createdAt: createdAt(),
 });
 
-export const vehicleSystems = mysqlTable("vehicle_systems", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 100 }).notNull().unique(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+export const suppliers = sqliteTable("suppliers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  createdAt: createdAt(),
 });
 
-export const suppliers = mysqlTable("suppliers", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 160 }).notNull().unique(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export const maintenanceRecords = mysqlTable("maintenance_records", {
-  id: int("id").autoincrement().primaryKey(),
-  serviceDate: date("serviceDate", { mode: "string" }).notNull(),
-  vehicleId: int("vehicleId").notNull(),
-  km: int("km").notNull(),
-  maintenanceTypeId: int("maintenanceTypeId").notNull(),
-  vehicleSystemId: int("vehicleSystemId").notNull(),
+export const maintenanceRecords = sqliteTable("maintenance_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  serviceDate: text("serviceDate").notNull(),
+  vehicleId: integer("vehicleId").notNull().references(() => vehicles.id),
+  km: integer("km").notNull(),
+  maintenanceTypeId: integer("maintenanceTypeId").notNull().references(() => maintenanceTypes.id),
+  vehicleSystemId: integer("vehicleSystemId").notNull().references(() => vehicleSystems.id),
   serviceDescription: text("serviceDescription").notNull(),
-  material: varchar("material", { length: 255 }),
-  partQuantity: decimal("partQuantity", { precision: 12, scale: 2 }).notNull().default("0"),
-  partUnitValue: decimal("partUnitValue", { precision: 12, scale: 2 }).notNull().default("0"),
-  partsTotal: decimal("partsTotal", { precision: 12, scale: 2 }).notNull().default("0"),
-  laborValue: decimal("laborValue", { precision: 12, scale: 2 }).notNull().default("0"),
-  totalValue: decimal("totalValue", { precision: 12, scale: 2 }).notNull().default("0"),
-  supplierId: int("supplierId"),
-  nextMaintenance: date("nextMaintenance", { mode: "string" }),
+  material: text("material"),
+  partQuantity: real("partQuantity").notNull().default(0),
+  partUnitValue: real("partUnitValue").notNull().default(0),
+  partsTotal: real("partsTotal").notNull().default(0),
+  laborValue: real("laborValue").notNull().default(0),
+  totalValue: real("totalValue").notNull().default(0),
+  supplierId: integer("supplierId").references(() => suppliers.id),
+  nextMaintenance: text("nextMaintenance"),
   notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: createdAt(),
+  updatedAt: text("updatedAt").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 });
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
 export type Vehicle = typeof vehicles.$inferSelect;
 export type MaintenanceRecord = typeof maintenanceRecords.$inferSelect;

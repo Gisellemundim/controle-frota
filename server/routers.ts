@@ -1,8 +1,10 @@
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, SESSION_MAX_AGE_MS } from "@shared/const";
+import { TRPCError } from "@trpc/server";
+import { authEnabled, createSessionToken, passwordMatches } from "./_core/auth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   addReference,
   createMaintenance,
@@ -34,26 +36,34 @@ const maintenanceInput = z.object({
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => ({ user: opts.ctx.user, authEnabled: authEnabled() })),
+    login: publicProcedure
+      .input(z.object({ name: z.string().trim().min(2, "Digite seu nome."), password: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!authEnabled()) return { ok: true };
+        if (!passwordMatches(input.password)) throw new TRPCError({ code: "UNAUTHORIZED", message: "Senha incorreta." });
+        const token = await createSessionToken(input.name);
+        ctx.res.cookie(COOKIE_NAME, token, { ...getSessionCookieOptions(ctx.req), maxAge: SESSION_MAX_AGE_MS });
+        return { ok: true };
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(COOKIE_NAME, { ...getSessionCookieOptions(ctx.req), maxAge: -1 });
       return { success: true } as const;
     }),
   }),
   fleet: router({
-    bootstrap: publicProcedure.mutation(async () => {
+    bootstrap: protectedProcedure.mutation(async () => {
       await seedFleetDefaults();
       return { ok: true };
     }),
-    references: publicProcedure.query(async () => getReferenceData()),
-    addReference: publicProcedure
+    references: protectedProcedure.query(async () => getReferenceData()),
+    addReference: protectedProcedure
       .input(z.object({ kind: z.enum(["vehicle", "type", "system", "supplier"]), name: z.string().trim().min(2, "Digite um nome válido.") }))
       .mutation(async ({ input }) => {
         await addReference(input.kind, input.name);
         return { ok: true };
       }),
-    list: publicProcedure
+    list: protectedProcedure
       .input(z.object({
         vehicleId: z.number().int().positive().optional(),
         maintenanceTypeId: z.number().int().positive().optional(),
@@ -62,19 +72,19 @@ export const appRouter = router({
         to: z.string().optional(),
       }).optional())
       .query(async ({ input }) => listMaintenances(input)),
-    create: publicProcedure.input(maintenanceInput).mutation(async ({ input }) => {
+    create: protectedProcedure.input(maintenanceInput).mutation(async ({ input }) => {
       const normalized = { ...input, nextMaintenance: input.nextMaintenance || null };
       return createMaintenance(normalized);
     }),
-    update: publicProcedure.input(z.object({ id: z.number().int().positive(), data: maintenanceInput })).mutation(async ({ input }) => {
+    update: protectedProcedure.input(z.object({ id: z.number().int().positive(), data: maintenanceInput })).mutation(async ({ input }) => {
       await updateMaintenance(input.id, { ...input.data, nextMaintenance: input.data.nextMaintenance || null });
       return { ok: true };
     }),
-    remove: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+    remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
       await deleteMaintenance(input.id);
       return { ok: true };
     }),
-    dashboard: publicProcedure.query(async () => getDashboardData()),
+    dashboard: protectedProcedure.query(async () => getDashboardData()),
   }),
 });
 
